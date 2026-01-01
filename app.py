@@ -2,6 +2,12 @@ import mediapipe as mp
 import cv2
 import numpy as np
 import requests
+from flask import Flask, jsonify, request
+
+
+
+
+
 
 
 mp_pose = mp.solutions.pose
@@ -224,17 +230,16 @@ def run_measurement_tool_from_images(img_front, img_side, height_cm):
 
     return results
 
+app = Flask(__name__)
+@app.route("/")
+BACKEND_ENDPOINT = "https://backend.com/get_user_images"  
 
+try:
+    img_front, img_side, height_cm = fetch_images_and_height(BACKEND_ENDPOINT)
+    results = run_measurement_tool_from_images(img_front, img_side, height_cm)
 
-if __name__ == "__main__":
-    BACKEND_ENDPOINT = "https://backend.com/get_user_images"  
-
-    try:
-        img_front, img_side, height_cm = fetch_images_and_height(BACKEND_ENDPOINT)
-        results = run_measurement_tool_from_images(img_front, img_side, height_cm)
-
-        print("\nBODY MEASUREMENTS (inches) using ellipse approximation:")
-        for k, v in results.items():
-            print(f"{k.capitalize():12s}: {v:.2f}\"")
-    except Exception as e:
-        print(f"Error: {e}")
+    print("\nBODY MEASUREMENTS (inches) using ellipse approximation:")
+    for k, v in results.items():
+        print(f"{k.capitalize():12s}: {v:.2f}\"")
+except Exception as e:
+    print(f"Error: {e}")
