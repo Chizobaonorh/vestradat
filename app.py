@@ -32,14 +32,17 @@ POSE_LANDMARKS = {
 CM_TO_INCH = 1 / 2.54
 
 
-def load_image_from_url(url: str):
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        raise ValueError(f"Failed to fetch image from {url}")
-    nparr = np.frombuffer(resp.content, np.uint8)
+def load_image_from_base64(base64_string: str):
+    if ',' in base64_string:
+        base64_string = base64_string.split(',')[1]
+    
+    img_bytes = base64.b64decode(base64_string)
+    nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
     if img is None:
-        raise ValueError("Failed to decode image from URL")
+        raise ValueError("Failed to decode image from base64")
+    
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
@@ -217,17 +220,66 @@ def run_measurement_tool_from_images(img_front, img_side, height_cm):
 
     return results
 
-
 @app.route("/measure", methods=["POST"])
 def measure():
-    data = request.json
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        required_fields = ["frontImageData", "sideImageData", "userHeight"]
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+        
+        front_base64 = data.get("frontImageData")
+        side_base64 = data.get("sideImageData")
+        height_cm = data.get("userHeight")
+        scan_timestamp = data.get("scanTimestamp", datetime.utcnow().isoformat() + "Z")
+        
+        img_front = load_image_from_base64(front_base64)
+        img_side = load_image_from_base64(side_base64)
+        
+        results = run_measurement_tool_from_images(img_front, img_side, height_cm)
+        
+        backend_payload = {
+            "frontImageData": front_base64,
+            "sideImageData": side_base64,
+            "userHeight": height_cm,
+            "scanTimestamp": scan_timestamp,
+            "measurements": results
+        }
+        
+        backend_url = "https://datacapture-backend.onrender.com/api/measurements/scan"
+        response = requests.post(
+            backend_url,
+            json=backend_payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return jsonify({
+                "success": True,
+                "measurements": results,
+                "backend_response": response.json()
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "measurements": results,
+                "backend_error": response.text,
+                "backend_status": response.status_code
+            }), 200
+            
+    except ValueError as e:
+        return jsonify({"error": f"Invalid image data: {str(e)}"}), 400
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Backend API error: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
-    height_cm = data.get("height_cm")
-    front_url = data.get("front_image_url")
-    side_url = data.get("side_image_url")
 
-    img_front = load_image_from_url(front_url)
-    img_side = load_image_from_url(side_url)
-
-    results = run_measurement_tool_from_images(img_front, img_side, height_cm)
-    return jsonify(results)
+if __name__ == "__main__":
+    app.run(debug=True)
