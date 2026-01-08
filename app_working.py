@@ -23,8 +23,14 @@ POSE_LANDMARKS = {
 CM_TO_INCH = 1 / 2.54
 
 def load_image_from_base64(base64_string: str):
+    # FIX: January 7, 2026 - Added memory optimization for Render 512MB limit
+    # Prevents 502 Bad Gateway errors by limiting image size and resizing
     if ',' in base64_string:
         base64_string = base64_string.split(',')[1]
+    
+    # Strict size limit for 512MB memory
+    if len(base64_string) > 800_000:  # ~600KB image
+        raise ValueError("Image too large - max 600KB per image")
     
     img_bytes = base64.b64decode(base64_string)
     nparr = np.frombuffer(img_bytes, np.uint8)
@@ -33,7 +39,15 @@ def load_image_from_base64(base64_string: str):
     if img is None:
         raise ValueError("Failed to decode image from base64")
     
+    # Aggressive resize to save memory
+    h, w = img.shape[:2]
+    if w > 500 or h > 700:
+        scale = min(500/w, 700/h)
+        new_w, new_h = int(w*scale), int(h*scale)
+        img = cv2.resize(img, (new_w, new_h))
+    
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # END FIX: January 7, 2026 - Memory optimization complete
 
 def get_basic_measurements_from_image(img):
     """Extract basic measurements using simple image processing"""
