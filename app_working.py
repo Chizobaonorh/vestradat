@@ -5,6 +5,9 @@ import base64
 import os
 from flask import Flask, jsonify, request
 import datetime
+from urllib.parse import urlparse
+from PIL import Image
+import io
 
 app = Flask(__name__)
 
@@ -21,6 +24,33 @@ POSE_LANDMARKS = {
 }
 
 CM_TO_INCH = 1 / 2.54
+
+def load_image_from_url(image_url: str):
+    """Load image from Cloudinary URL or any image URL"""
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+        
+        # Convert to PIL Image first for better handling
+        img_pil = Image.open(io.BytesIO(response.content))
+        
+        # Convert to RGB if needed
+        if img_pil.mode != 'RGB':
+            img_pil = img_pil.convert('RGB')
+        
+        # Resize if too large (memory optimization)
+        w, h = img_pil.size
+        if w > 500 or h > 700:
+            scale = min(500/w, 700/h)
+            new_w, new_h = int(w*scale), int(h*scale)
+            img_pil = img_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        # Convert PIL to OpenCV format
+        img_array = np.array(img_pil)
+        return img_array
+        
+    except Exception as e:
+        raise ValueError(f"Failed to load image from URL: {str(e)}")
 
 def load_image_from_base64(base64_string: str):
     # FIX: January 7, 2026 - Added memory optimization for Render 512MB limit
@@ -48,6 +78,17 @@ def load_image_from_base64(base64_string: str):
     
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     # END FIX: January 7, 2026 - Memory optimization complete
+
+def load_image(image_data: str):
+    """Load image from either URL or base64 data"""
+    # Check if it's a URL
+    if image_data.startswith('http://') or image_data.startswith('https://'):
+        return load_image_from_url(image_data)
+    # Check if it's base64
+    elif image_data.startswith('data:image/') or len(image_data) > 100:
+        return load_image_from_base64(image_data)
+    else:
+        raise ValueError("Invalid image data format. Must be URL or base64.")
 
 def get_basic_measurements_from_image(img):
     """Extract basic measurements using simple image processing"""
@@ -121,26 +162,29 @@ def measure():
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
-        required_fields = ["frontImageData", "sideImageData", "userHeight"]
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
-        
-        front_base64 = data.get("frontImageData")
-        side_base64 = data.get("sideImageData")
+        # Support both URL and base64 formats
+        front_image_data = data.get("frontImageData") or data.get("frontImageUrl")
+        side_image_data = data.get("sideImageData") or data.get("sideImageUrl")
         height_cm = data.get("userHeight")
+        
+        if not front_image_data or not side_image_data or not height_cm:
+            return jsonify({
+                "error": "Missing required fields. Provide frontImageData/frontImageUrl, sideImageData/sideImageUrl, and userHeight"
+            }), 400
+        
         scan_timestamp = data.get("scanTimestamp", datetime.datetime.utcnow().isoformat() + "Z")
         
-        img_front = load_image_from_base64(front_base64)
-        img_side = load_image_from_base64(side_base64)
+        # Load images using the unified function
+        img_front = load_image(front_image_data)
+        img_side = load_image(side_image_data)
         
         results = run_measurement_tool_from_images(img_front, img_side, height_cm)
         
-        # Skip backend call for local testing
         return jsonify({
             "success": True,
             "measurements": results,
-            "message": "Measurements completed using basic image processing"
+            "message": "Measurements completed using image processing",
+            "imageSource": "cloudinary" if front_image_data.startswith('http') else "base64"
         }), 200
             
     except ValueError as e:

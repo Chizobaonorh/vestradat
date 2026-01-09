@@ -1,6 +1,6 @@
 # VestraDAT - Body Measurement API
 
-AI-powered body measurement tool using computer vision.
+AI-powered body measurement tool using computer vision with Cloudinary integration.
 
 ## Quick Start
 
@@ -12,7 +12,16 @@ py app_working.py
 ### API Testing
 **Endpoint:** `POST http://localhost:5000/measure`
 
-**Request:**
+**Option 1: Cloudinary URLs (Recommended)**
+```json
+{
+  "frontImageUrl": "https://res.cloudinary.com/your-cloud/image/upload/v1234567890/front.jpg",
+  "sideImageUrl": "https://res.cloudinary.com/your-cloud/image/upload/v1234567890/side.jpg",
+  "userHeight": 170
+}
+```
+
+**Option 2: Base64 (Legacy Support)**
 ```json
 {
   "frontImageData": "data:image/jpeg;base64,<BASE64_IMAGE>",
@@ -38,7 +47,17 @@ py app_working.py
 - **Start Command must be:** `gunicorn app_working:app`
 
 ## Features
-- Real base64 image processing
-- OpenCV-based body measurements
+- **Cloudinary Integration** - Direct URL processing (recommended)
+- **Base64 Support** - Legacy compatibility
+- Real image processing with OpenCV
 - Height-based scaling
+- Memory-optimized for production
+- Automatic image resizing
 - Production-ready deployment
+
+## Benefits of Cloudinary Integration
+- **Reduced Memory Usage** - No base64 encoding/decoding
+- **Faster Processing** - Direct image download
+- **Better Performance** - Optimized image delivery
+- **Automatic Optimization** - Cloudinary handles compression
+- **CDN Benefits** - Global image delivery
